@@ -131,6 +131,14 @@ def switch_branch(branch_name: str) -> None:
         fail(f"`git switch -c {branch_name}` failed.\n{output}".rstrip())
 
 
+def push_branch(branch_name: str) -> None:
+    try:
+        run(["git", "push", "-u", "origin", branch_name], capture_output=True)
+    except subprocess.CalledProcessError as exc:
+        output = (exc.stderr or exc.stdout or "").strip()
+        fail(f"`git push -u origin {branch_name}` failed.\n{output}".rstrip())
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Create a GitHub issue and switch to feature-#<issue>.",
@@ -149,6 +157,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-assignee",
         action="store_true",
         help="Create the issue without assigning anyone.",
+    )
+    parser.add_argument(
+        "--push",
+        action="store_true",
+        help="Push the created branch to origin and set upstream.",
+    )
+    parser.add_argument(
+        "--no-push",
+        action="store_true",
+        help="Do not push the created branch to origin.",
     )
     parser.add_argument(
         "--issue-number",
@@ -181,6 +199,9 @@ def main() -> None:
     assignee = None if args.no_assignee else args.assignee.strip()
     if args.issue_number is None and not assignee and not args.no_assignee:
         fail("Assignee cannot be empty. Pass --no-assignee to skip assignment.")
+    if args.push and args.no_push:
+        fail("Pass either --push or --no-push, not both.")
+    should_push = not args.no_push
 
     if working_tree_dirty() and not args.allow_dirty:
         fail(
@@ -218,15 +239,19 @@ def main() -> None:
                 print(f"issue_url={issue_url}")
             if assignee:
                 print(f"assignee={assignee}")
+            print(f"push_origin={'true' if should_push else 'false'}")
             print(f"branch_name={branch_name}")
             return
 
         switch_branch(branch_name)
+        if should_push:
+            push_branch(branch_name)
         if issue_url:
             print(f"issue_url={issue_url}")
         print(f"issue_number={issue_number}")
         if assignee:
             print(f"assignee={assignee}")
+        print(f"push_origin={'true' if should_push else 'false'}")
         print(f"branch_name={branch_name}")
     finally:
         if cleanup_path and cleanup_path.exists():
