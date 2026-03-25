@@ -82,7 +82,8 @@ def issue_number_from_branch(branch_name: str) -> int | None:
 
 def normalize_body(body_text: str, issue_number: int) -> str:
     footer = f"Closes #{issue_number}"
-    if footer in body_text:
+    footer_pattern = re.compile(rf"(?mi)^\s*{re.escape(footer)}\s*$")
+    if footer_pattern.search(body_text):
         return body_text
     stripped = body_text.rstrip()
     if not stripped:
