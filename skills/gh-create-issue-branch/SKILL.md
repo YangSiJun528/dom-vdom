@@ -7,7 +7,7 @@ description: Create a polished Korean GitHub issue from rough user notes, open i
 
 ## Goal
 
-Turn rough feature or bug notes into a clean Korean GitHub issue, create the issue with `gh`, create and switch to a branch named exactly `feature-#<issue-number>`, and continue the work on that branch.
+Turn rough feature or bug notes into a clean Korean GitHub issue, create the issue with `gh`, create and switch to a branch named exactly `feature-#<issue-number>`, push that branch to `origin`, and continue the work on that branch.
 
 ## Core Rules
 
@@ -16,6 +16,7 @@ Turn rough feature or bug notes into a clean Korean GitHub issue, create the iss
 - Write the GitHub issue title and body in Korean by default. If the user provides rough notes in English, translate them into natural Korean unless the user explicitly asks for another language.
 - Keep code identifiers, commands, API names, class names, and branch names unchanged when translating them would reduce precision.
 - Assign the new issue to the authenticated GitHub user by default with `--assignee "@me"`. Only skip or change the assignee when the user explicitly asks for that.
+- Push the new branch to `origin` and set upstream by default so the branch is visible on GitHub. Only skip the push when the user explicitly wants a local-only branch.
 - Improve wording, structure, and acceptance criteria, but do not invent product requirements.
 - Quote branch names whenever showing shell commands because `#` is safer when quoted in human-readable examples.
 - Check the working tree before branching. If it is dirty, warn that existing changes will follow the new branch and ask before proceeding.
@@ -82,7 +83,7 @@ Standard flow:
 1. Draft the final issue title and body.
 2. Confirm `gh` exists and that `gh auth status` succeeds.
 3. Write the body to a temporary Markdown file if that is the easiest way to pass multiline text.
-4. Run the helper script to create the issue, self-assign it by default, and switch branches.
+4. Run the helper script to create the issue, self-assign it by default, switch branches, and push the branch to `origin`.
 5. Report the issue URL, issue number, and branch name.
 6. Continue implementation on the new branch.
 
@@ -93,6 +94,7 @@ python3 /path/to/gh-create-issue-branch/scripts/create_issue_and_branch.py \
   --title "가상 DOM keyed diff 지원 추가" \
   --body-file /tmp/issue-body.md \
   --assignee "@me" \
+  --push \
   --prefix feature
 ```
 
@@ -100,6 +102,7 @@ The script creates a branch named exactly `feature-#<issue-number>`.
 
 If the user provides a repo override, pass `--repo owner/name`.
 If the user explicitly does not want an assignee, pass `--no-assignee`.
+If the user explicitly wants a local-only branch, pass `--no-push`.
 
 ## Continue The Work
 
