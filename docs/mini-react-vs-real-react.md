@@ -1,5 +1,7 @@
 # Mini React vs Real React 심층 비교 보고서
 
+> 참고: 이 비교 문서는 root-only hook 구조를 기준으로 정리한 기록입니다. 현재 런타임은 child component hook과 keyed component identity를 일부 지원하도록 확장되었습니다.
+
 ## 1. 문서 목적
 
 이 문서는 이번 주 프로젝트에 구현한 React-like 런타임이 실제 React와 어떤 점에서 닮았고, 어떤 점에서 구조적으로 다른지 코드 기준으로 깊게 비교하기 위해 작성했다.

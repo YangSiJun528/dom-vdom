@@ -18,9 +18,6 @@ import {
 
 function BoardRoot() {
   const [tasks, setTasks] = useState(() => readInitialTasks());
-  const [titleInput, setTitleInput] = useState("");
-  const [teamInput, setTeamInput] = useState("플랫폼");
-  const [priorityInput, setPriorityInput] = useState("medium");
   const [teamFilter, setTeamFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortMode, setSortMode] = useState("latest");
@@ -47,9 +44,6 @@ function BoardRoot() {
   }, [tasks]);
 
   const actions = {
-    onTitleInput: (event) => setTitleInput(event.target.value),
-    onTeamInput: (event) => setTeamInput(event.target.value),
-    onPriorityInput: (event) => setPriorityInput(event.target.value),
     onTeamFilter: (event) => setTeamFilter(event.target.value),
     onStatusFilter: (event) => setStatusFilter(event.target.value),
     onSortMode: (event) => setSortMode(event.target.value),
@@ -63,8 +57,17 @@ function BoardRoot() {
         ),
       );
     },
-    onAddTask: () => {
-      const normalizedTitle = titleInput.trim();
+    onAddTask: (event) => {
+      const form = event.currentTarget.form ?? event.currentTarget.closest("form");
+
+      if (!form) {
+        return;
+      }
+
+      const formData = new FormData(form);
+      const normalizedTitle = String(formData.get("taskTitle") ?? "").trim();
+      const team = String(formData.get("taskTeam") ?? "플랫폼");
+      const priority = String(formData.get("taskPriority") ?? "medium");
 
       if (!normalizedTitle) {
         return;
@@ -72,9 +75,10 @@ function BoardRoot() {
 
       setTasks((currentTasks) => [
         ...currentTasks,
-        createTaskDraft(normalizedTitle, teamInput, priorityInput),
+        createTaskDraft(normalizedTitle, team, priority, currentTasks),
       ]);
-      setTitleInput("");
+
+      form.reset();
     },
   };
 
@@ -82,9 +86,6 @@ function BoardRoot() {
     createBoardProps(
       {
         tasks,
-        titleInput,
-        teamInput,
-        priorityInput,
         teamFilter,
         statusFilter,
         sortMode,

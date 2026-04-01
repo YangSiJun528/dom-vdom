@@ -39,21 +39,46 @@ describe("useEffect", () => {
     expect(calls).toEqual(["run:0", "cleanup:0", "run:1"]);
   });
 
-  it("자식 컴포넌트에서 useEffect를 호출하면 루트 전용 에러를 던진다", () => {
-    function Child() {
-      useEffect(() => {}, []);
-      return createElement("span", {}, "child");
+  it("자식 컴포넌트의 effect가 deps 변경과 unmount에서 cleanup된다", () => {
+    const calls = [];
+    let updateLabel = () => {};
+    let hideChild = () => {};
+
+    function Child({ label }) {
+      useEffect(() => {
+        calls.push(`run:${label}`);
+        return () => calls.push(`cleanup:${label}`);
+      }, [label]);
+
+      return createElement("span", { id: "child" }, label);
     }
 
     function App() {
-      return createElement("div", {}, createElement(Child, {}));
+      const [label, setLabel] = useState("alpha");
+      const [visible, setVisible] = useState(true);
+
+      updateLabel = setLabel;
+      hideChild = () => setVisible(false);
+
+      return createElement(
+        "div",
+        {},
+        visible ? createElement(Child, { key: "child", label }) : null,
+      );
     }
 
     const container = document.createElement("div");
     const instance = new FunctionComponent(App);
 
-    expect(() => instance.mount(container)).toThrowError(
-      new Error("Hooks can only be used in the root component."),
-    );
+    instance.mount(container);
+    updateLabel("beta");
+    hideChild();
+
+    expect(calls).toEqual([
+      "run:alpha",
+      "cleanup:alpha",
+      "run:beta",
+      "cleanup:beta",
+    ]);
   });
 });

@@ -45,21 +45,52 @@ describe("useMemo", () => {
     expect(container.querySelector("#value")?.textContent).toBe("4");
   });
 
-  it("자식 컴포넌트에서 useMemo를 호출하면 루트 전용 에러를 던진다", () => {
-    function Child() {
-      useMemo(() => 1, []);
-      return createElement("span", {}, "child");
+  it("자식 컴포넌트마다 memo cache를 독립적으로 유지한다", () => {
+    const computeCounts = {
+      left: 0,
+      right: 0,
+    };
+    let updateLeft = () => {};
+    let updateQuery = () => {};
+
+    function Child({ id, value }) {
+      const doubled = useMemo(() => {
+        computeCounts[id] += 1;
+        return value * 2;
+      }, [value]);
+
+      return createElement("span", { id: `value-${id}` }, String(doubled));
     }
 
     function App() {
-      return createElement("div", {}, createElement(Child, {}));
+      const [left, setLeft] = useState(1);
+      const [right] = useState(10);
+      const [query, setQuery] = useState("");
+
+      updateLeft = setLeft;
+      updateQuery = setQuery;
+
+      return createElement(
+        "div",
+        {},
+        createElement(Child, { key: "left", id: "left", value: left }),
+        createElement(Child, { key: "right", id: "right", value: right }),
+        createElement("span", { id: "query" }, query),
+      );
     }
 
     const container = document.createElement("div");
     const instance = new FunctionComponent(App);
 
-    expect(() => instance.mount(container)).toThrowError(
-      new Error("Hooks can only be used in the root component."),
-    );
+    instance.mount(container);
+    updateQuery("memo");
+    updateLeft(2);
+
+    expect(computeCounts).toEqual({
+      left: 2,
+      right: 1,
+    });
+    expect(container.querySelector("#value-left")?.textContent).toBe("4");
+    expect(container.querySelector("#value-right")?.textContent).toBe("20");
   });
 });

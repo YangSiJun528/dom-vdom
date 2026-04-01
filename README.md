@@ -4,7 +4,7 @@
 
 ## 구현 범위
 
-- 루트 전용 런타임 API
+- 컴포넌트 단위 런타임 API
   - `createElement`
   - `FunctionComponent`
   - `useState`
@@ -27,9 +27,9 @@
 
 ## 핵심 제약
 
-- Hook은 루트 컴포넌트에서만 사용할 수 있습니다.
-- 자식 컴포넌트는 모두 `props`만 받는 stateless pure function입니다.
-- 모든 상태는 루트 컴포넌트에서만 관리합니다.
+- Hook은 컴포넌트 render 중에만 사용할 수 있습니다.
+- 자식 컴포넌트도 자체 hook slot과 effect lifecycle을 가질 수 있습니다.
+- 리스트 자식 상태 보존은 `key`가 있을 때 안정적으로 동작합니다.
 - 상태 변경 시 흐름은 `새 vnode 생성 -> diff -> patch -> effect flush` 입니다.
 - batching은 넣지 않았고, 성공한 `setState`마다 루트 `update()`를 1회 실행합니다.
 
@@ -131,5 +131,5 @@ npm run dev
 
 - Fiber, concurrent rendering, batching, scheduler는 구현하지 않았습니다.
 - Hook 규칙 검사도 최소 수준입니다.
-- reconciliation은 key 기반이 아니라 현재 프로젝트의 index 기반 diff를 따릅니다.
+- host DOM diff는 여전히 index 기반이지만, child component hook identity는 `key`를 사용해 보존합니다.
 - 하지만 상태 유지, deps 비교, cleanup, memo cache, patch 기반 DOM 업데이트라는 핵심 학습 포인트는 직접 확인할 수 있습니다.

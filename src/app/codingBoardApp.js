@@ -21,6 +21,59 @@ function createTaskId() {
   return `task-${taskSequence}`;
 }
 
+function getTaskSequenceFromId(taskId) {
+  const matched = /^task-(\d+)$/.exec(taskId);
+
+  if (!matched) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(matched[1], 10);
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function syncTaskSequence(tasks) {
+  for (const task of tasks) {
+    const sequence = getTaskSequenceFromId(task.id);
+
+    if (sequence === null) {
+      continue;
+    }
+
+    taskSequence = Math.max(taskSequence, sequence);
+  }
+}
+
+function createUniqueTaskId(existingIds) {
+  let nextId = createTaskId();
+
+  while (existingIds.has(nextId)) {
+    nextId = createTaskId();
+  }
+
+  existingIds.add(nextId);
+  return nextId;
+}
+
+function ensureUniqueTaskIds(tasks) {
+  syncTaskSequence(tasks);
+
+  const seenIds = new Set();
+
+  return tasks.map((task) => {
+    if (!seenIds.has(task.id)) {
+      seenIds.add(task.id);
+      return task;
+    }
+
+    return {
+      ...task,
+      id: createUniqueTaskId(seenIds),
+    };
+  });
+}
+
 export function createSampleTasks() {
   return [
     {
@@ -71,7 +124,7 @@ export function readInitialTasks() {
     const rawValue = localStorage.getItem(STORAGE_KEY);
 
     if (!rawValue) {
-      return createSampleTasks();
+      return ensureUniqueTaskIds(createSampleTasks());
     }
 
     const parsed = JSON.parse(rawValue);
@@ -82,9 +135,11 @@ export function readInitialTasks() {
 
     const savedTasks = parsed.filter(isTask);
 
-    return savedTasks.length > 0 ? savedTasks : createSampleTasks();
+    return savedTasks.length > 0
+      ? ensureUniqueTaskIds(savedTasks)
+      : ensureUniqueTaskIds(createSampleTasks());
   } catch {
-    return createSampleTasks();
+    return ensureUniqueTaskIds(createSampleTasks());
   }
 }
 
@@ -195,17 +250,9 @@ function SummaryCards({ summary }) {
   );
 }
 
-function Composer({
-  titleInput,
-  teamInput,
-  priorityInput,
-  onTitleInput,
-  onTeamInput,
-  onPriorityInput,
-  onAddTask,
-}) {
+function Composer({ onAddTask }) {
   return createElement(
-    "section",
+    "form",
     { className: "surface-card composer-card" },
     createElement("h2", {}, "작업 추가"),
     createElement(
@@ -217,10 +264,10 @@ function Composer({
         createElement("span", {}, "작업명"),
         createElement("input", {
           id: "task-title-input",
+          name: "taskTitle",
           className: "text-input",
           placeholder: "예: useEffect cleanup 검증",
-          value: titleInput,
-          oninput: onTitleInput,
+          defaultValue: "",
         }),
       ),
       createElement(
@@ -231,9 +278,9 @@ function Composer({
           "select",
           {
             id: "task-team-select",
+            name: "taskTeam",
             className: "select-input",
-            value: teamInput,
-            onchange: onTeamInput,
+            defaultValue: "플랫폼",
           },
           TEAM_OPTIONS.map((team) => optionNode(team, team)),
         ),
@@ -246,9 +293,9 @@ function Composer({
           "select",
           {
             id: "task-priority-select",
+            name: "taskPriority",
             className: "select-input",
-            value: priorityInput,
-            onchange: onPriorityInput,
+            defaultValue: "medium",
           },
           [
             optionNode("high", "높음"),
@@ -262,6 +309,7 @@ function Composer({
       "button",
       {
         id: "add-task-button",
+        type: "button",
         className: "primary-button",
         onclick: onAddTask,
       },
@@ -419,64 +467,349 @@ function TaskList({ tasks, onToggle }) {
   return createElement(
     "section",
     { className: "task-list" },
-    tasks.map((task) => createElement(TaskCard, { task, onToggle })),
+    tasks.map((task) => createElement(TaskCard, { key: task.id, task, onToggle })),
   );
 }
 
-function DebugSection({ title, sectionId, items }) {
-  return createElement(
-    "section",
-    { className: "debug-section" },
-    createElement("h3", {}, title),
-    createElement(
-      "ul",
-      { id: sectionId, className: "debug-list" },
-      items.length > 0
-        ? items.map((item) => createElement("li", {}, item))
-        : [createElement("li", {}, "기록 없음")],
-    ),
-  );
+function truncateText(text, maxLength) {
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
 }
 
-function formatHookSummary(hook) {
+function safeSerializeDebugValue(value, spacing = 0) {
+  if (typeof value === "function") {
+    return "[Function]";
+  }
+
+  try {
+    return JSON.stringify(value, null, spacing) ?? "undefined";
+  } catch {
+    return String(value);
+  }
+}
+
+function createArraySample(value) {
+  if (value.length === 0) {
+    return "[]";
+  }
+
+  return truncateText(safeSerializeDebugValue(value.slice(0, 2), 2), 220);
+}
+
+function createObjectSample(value) {
+  const sample = {};
+
+  Object.keys(value)
+    .slice(0, 4)
+    .forEach((key) => {
+      sample[key] = value[key];
+    });
+
+  return truncateText(safeSerializeDebugValue(sample, 2), 220);
+}
+
+function summarizeDebugValue(value) {
+  if (Array.isArray(value)) {
+    return {
+      preview: `Array(${value.length})`,
+      meta: ["array", `${value.length} items`],
+      detailLabel: "Sample items",
+      detail: createArraySample(value),
+    };
+  }
+
+  if (value === null) {
+    return {
+      preview: "null",
+      meta: ["null"],
+      detailLabel: "Snapshot",
+      detail: "null",
+    };
+  }
+
+  if (typeof value === "string") {
+    return {
+      preview: `"${truncateText(value, 64)}"`,
+      meta: ["string", `${value.length} chars`],
+      detailLabel: "String value",
+      detail: truncateText(value, 220),
+    };
+  }
+
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return {
+      preview: String(value),
+      meta: [typeof value],
+      detailLabel: "Value",
+      detail: String(value),
+    };
+  }
+
+  if (typeof value === "undefined") {
+    return {
+      preview: "undefined",
+      meta: ["empty"],
+      detailLabel: "Snapshot",
+      detail: "undefined",
+    };
+  }
+
+  if (typeof value === "function") {
+    return {
+      preview: "[Function]",
+      meta: ["callable"],
+      detailLabel: "Snapshot",
+      detail: "[Function]",
+    };
+  }
+
+  if (typeof value === "object") {
+    const keys = Object.keys(value);
+    const keyPreview = keys.length > 0
+      ? truncateText(keys.slice(0, 4).join(", "), 48)
+      : "";
+
+    return {
+      preview: keys.length > 0 ? `Object { ${keyPreview}${keys.length > 4 ? ", ..." : ""} }` : "Object {}",
+      meta: ["object", `${keys.length} keys`],
+      detailLabel: "Shape preview",
+      detail: createObjectSample(value),
+    };
+  }
+
+  const serialized = safeSerializeDebugValue(value);
+
+  return {
+    preview: truncateText(serialized, 64),
+    meta: [typeof value],
+    detailLabel: "Snapshot",
+    detail: truncateText(serialized, 220),
+  };
+}
+
+function summarizeDependencies(deps) {
+  if (deps === undefined) {
+    return {
+      preview: "No dependency array",
+      metaLabel: "runs every render",
+      detail: "undefined",
+    };
+  }
+
+  const summary = summarizeDebugValue(deps);
+
+  return {
+    preview: summary.preview,
+    metaLabel: `${deps.length} deps`,
+    detail: summary.detail,
+  };
+}
+
+function formatHookKind(kind) {
+  return `${kind.charAt(0).toUpperCase()}${kind.slice(1)}`;
+}
+
+function summarizeHook(hook) {
   if (hook.kind === "state") {
-    return `state #${hook.index}: ${JSON.stringify(hook.value)}`;
+    const valueSummary = summarizeDebugValue(hook.value);
+
+    return {
+      componentLabel: hook.componentLabel,
+      kind: hook.kind,
+      index: hook.index,
+      preview: valueSummary.preview,
+      meta: valueSummary.meta,
+      details: [
+        {
+          label: valueSummary.detailLabel,
+          value: valueSummary.detail,
+        },
+      ],
+    };
   }
 
   if (hook.kind === "memo") {
-    return `memo #${hook.index}: ${JSON.stringify(hook.value)}`;
+    const valueSummary = summarizeDebugValue(hook.value);
+    const depsSummary = summarizeDependencies(hook.deps);
+
+    return {
+      componentLabel: hook.componentLabel,
+      kind: hook.kind,
+      index: hook.index,
+      preview: valueSummary.preview,
+      meta: [...valueSummary.meta, depsSummary.metaLabel],
+      details: [
+        {
+          label: valueSummary.detailLabel,
+          value: valueSummary.detail,
+        },
+        {
+          label: "Deps snapshot",
+          value: depsSummary.detail,
+        },
+      ],
+    };
   }
 
   if (hook.kind === "effect") {
-    return `effect #${hook.index}: deps=${JSON.stringify(hook.deps ?? [])}`;
+    const depsSummary = summarizeDependencies(hook.deps);
+
+    return {
+      componentLabel: hook.componentLabel,
+      kind: hook.kind,
+      index: hook.index,
+      preview: depsSummary.preview,
+      meta: [depsSummary.metaLabel],
+      details: [
+        {
+          label: "Deps snapshot",
+          value: depsSummary.detail,
+        },
+      ],
+    };
   }
 
-  return `${hook.kind} #${hook.index}`;
+  return {
+    componentLabel: hook.componentLabel,
+    kind: hook.kind,
+    index: hook.index,
+    preview: "Unsupported debug shape",
+    meta: [],
+    details: [],
+  };
+}
+
+function DebugSectionFrame({ title, caption, children }) {
+  return createElement(
+    "section",
+    { className: "debug-section" },
+    createElement(
+      "div",
+      { className: "debug-section-header" },
+      createElement("h3", {}, title),
+      caption ? createElement("span", { className: "debug-section-caption" }, caption) : null,
+    ),
+    children,
+  );
+}
+
+function HookSlotCard({ hook }) {
+  return createElement(
+    "article",
+    {
+      className: `debug-hook-card ${hook.kind}`,
+      "data-hook-card": "true",
+      "data-hook-kind": hook.kind,
+      "data-hook-index": String(hook.index),
+    },
+    createElement(
+      "div",
+      { className: "debug-hook-card-header" },
+      createElement(
+        "div",
+        { className: "debug-hook-card-title" },
+        createElement("span", { className: `debug-kind-badge ${hook.kind}` }, formatHookKind(hook.kind)),
+        createElement("strong", { className: "debug-hook-slot" }, `Slot #${hook.index}`),
+      ),
+      createElement("span", { className: "debug-hook-owner" }, hook.componentLabel),
+    ),
+    createElement("p", { className: "debug-hook-preview", "data-hook-preview": "true" }, hook.preview),
+    hook.meta.length > 0
+      ? createElement(
+        "div",
+        { className: "debug-meta-list" },
+        hook.meta.map((item) =>
+          createElement("span", { className: "debug-meta-pill" }, item)),
+      )
+      : null,
+    hook.details.length > 0
+      ? createElement(
+        "div",
+        { className: "debug-hook-details" },
+        hook.details.map((detail) =>
+          createElement(
+            "div",
+            { className: "debug-detail-block" },
+            createElement("span", { className: "debug-detail-label" }, detail.label),
+            createElement("pre", { className: "debug-detail-code", "data-hook-detail": "true" }, detail.value),
+          )),
+      )
+      : null,
+  );
+}
+
+function renderHookSlots(hooks) {
+  const summarizedHooks = hooks.map(summarizeHook);
+
+  return createElement(
+    DebugSectionFrame,
+    {
+      title: "Hook Slots",
+      caption: `${hooks.length} slots`,
+    },
+    summarizedHooks.length > 0
+      ? createElement(
+        "div",
+        { id: "debug-hooks", className: "debug-hook-grid" },
+        summarizedHooks.map((hook) => createElement(HookSlotCard, { hook })),
+      )
+      : createElement("p", { id: "debug-hooks", className: "debug-empty" }, "활성 hook 없음"),
+  );
+}
+
+function renderDebugLogSection({ title, sectionId, items }) {
+  return createElement(
+    DebugSectionFrame,
+    {
+      title,
+      caption: items.length > 0 ? `${items.length} entries` : "No entries",
+    },
+    items.length > 0
+      ? createElement(
+        "ol",
+        { id: sectionId, className: "debug-log-list" },
+        items.map((item, index) =>
+          createElement(
+            "li",
+            { className: "debug-log-item" },
+            createElement("span", { className: "debug-log-order" }, String(index + 1).padStart(2, "0")),
+            createElement("code", { className: "debug-log-text" }, item),
+          )),
+      )
+      : createElement("p", { id: sectionId, className: "debug-empty" }, "기록 없음"),
+  );
 }
 
 export function buildDebugPanelVdom(snapshot) {
-  const hookItems = snapshot.hooks.map(formatHookSummary);
-
   return createElement(
     "div",
     { className: "debug-panel" },
     createElement(
       "div",
       { className: "debug-header" },
-      createElement("h2", {}, "Runtime Debug"),
-      createElement("strong", { id: "debug-render-count" }, `Render Count ${snapshot.renderCount}`),
+      createElement(
+        "div",
+        { className: "debug-header-copy" },
+        createElement("h2", {}, "Runtime Debug"),
+        createElement("p", { className: "debug-header-description" }, "render 흐름과 hook 상태를 발표용으로 읽기 쉽게 정리한 인스펙터입니다."),
+      ),
+      createElement(
+        "div",
+        { className: "debug-header-metrics" },
+        createElement("strong", { id: "debug-render-count", className: "debug-metric" }, `Render Count ${snapshot.renderCount}`),
+        createElement("span", { className: "debug-metric subtle" }, `Hook Slots ${snapshot.hooks.length}`),
+      ),
     ),
-    createElement(DebugSection, {
-      title: "Hook Slots",
-      sectionId: "debug-hooks",
-      items: hookItems,
-    }),
-    createElement(DebugSection, {
+    renderHookSlots(snapshot.hooks),
+    renderDebugLogSection({
       title: "Patch Log",
       sectionId: "debug-last-patches",
       items: snapshot.patchLog,
     }),
-    createElement(DebugSection, {
+    renderDebugLogSection({
       title: "Effect Log",
       sectionId: "debug-effect-log",
       items: snapshot.effectLog,
@@ -486,9 +819,6 @@ export function buildDebugPanelVdom(snapshot) {
 
 export function CodingBoardApp({
   tasks,
-  titleInput,
-  teamInput,
-  priorityInput,
   teamFilter,
   statusFilter,
   sortMode,
@@ -516,15 +846,7 @@ export function CodingBoardApp({
       createElement(
         "div",
         { className: "board-left" },
-        createElement(Composer, {
-          titleInput,
-          teamInput,
-          priorityInput,
-          onTitleInput,
-          onTeamInput,
-          onPriorityInput,
-          onAddTask,
-        }),
+        createElement(Composer, { onAddTask }),
         createElement(FilterBar, {
           teamFilter,
           statusFilter,
@@ -563,9 +885,12 @@ export function createBoardProps(state, actions) {
   };
 }
 
-export function createTaskDraft(title, team, priority) {
+export function createTaskDraft(title, team, priority, existingTasks = []) {
+  syncTaskSequence(existingTasks);
+  const existingIds = new Set(existingTasks.map((task) => task.id));
+
   return {
-    id: createTaskId(),
+    id: createUniqueTaskId(existingIds),
     title: title.trim(),
     team,
     priority,
